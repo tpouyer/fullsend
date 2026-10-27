@@ -321,7 +321,13 @@ flowchart TB
   routing is overlays setting `model` and `effort`; when a routed model is not
   served, the runner retries once with the model and effort it would use
   without overlays, and `FULLSEND_FALLBACK_MODELS` applies as each runtime
-  allows. Decided, not yet implemented.
+  allows. A matching overlay will also be able to grant runtime fetch, with
+  every prefix it adds inside the config-level allowlist, and an overlay of a
+  URL-fetched harness will not be able to set `agent`, `agent_input`,
+  `plugins` or `api_servers` until composition resolves those fields for
+  overlays
+  ([ADR 0158](ADRs/0158-overlays-may-grant-runtime-fetch-within-the-config-allowlist.md)).
+  Decided, not yet implemented.
 - Plugins are runtime-scoped harness resources: a harness declares `plugins:` as one list of directories in its own repository (same trust and fetch path as skills), and each entry's format decides which runtime loads it — a `plugin.json` bundle is Claude Code's, a directory pi's `-e` loader resolves is uploaded and loaded after a tree-hash preflight computed from the host copy. Each runtime names and skips the entries in the other format, so the list survives a runtime switch. Because `--no-extensions` plus explicit `-e` closes the set of code that can register tools, no per-tool declaration is needed ([ADR 0094](ADRs/0094-pi-extensions-are-harness-resources.md)).
 - Native Codex children run under a runner-owned policy: Bootstrap registers roles for an agent with the `Agent` tool, under harness security, whose parent model Codex resolves to collaboration V1 on the direct route (a V2, unlisted or `gateway/` parent keeps the multi-agent tools off), and binds each child's model (a persona's own entry in its role file, the run-level default otherwise) and the run's effort, and a mandatory dispatch hook admits only fresh-context V1 spawns of registered roles after checking `hooks.json` and the role files against runner-held digests; after each iteration the runner checks the spawns seen in the stream or in the children's rollouts on disk, each child once, against the hook's admissions ([ADR 0126](ADRs/0126-fullsend-owned-codex-subagents.md), [#6970](https://github.com/fullsend-ai/fullsend/issues/6970)).
 

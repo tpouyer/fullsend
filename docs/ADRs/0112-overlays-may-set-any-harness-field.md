@@ -21,6 +21,11 @@ Date: 2026-10-01
 
 Accepted
 
+*Amended by [ADR 0158](0158-overlays-may-grant-runtime-fetch-within-the-config-allowlist.md),
+which lets a matching overlay grant runtime fetch within the config-level
+allowlist and, for now, keeps an overlay of a URL-fetched harness from setting
+`agent`, `agent_input`, `plugins` or `api_servers`.*
+
 [ADR 0151](0151-harness-human-role-minimums.md) treats `human_min_role` as a
 guarded overlay field. Its ordered overlay outcome and effective value must be
 resolved from verified pre-admission facts and pinned before the harness's
