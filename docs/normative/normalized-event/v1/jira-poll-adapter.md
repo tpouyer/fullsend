@@ -80,6 +80,16 @@ Authorization is enforced by `fullsend dispatch` per
 [ADR 0054](../../../ADRs/0054-require-authorization-on-all-agent-dispatch-paths.md)
 **after** normalization. The poll loop does not bypass the gate.
 
+The poll loop also validates each normalized event before matching triggers.
+An event that fails validation (for example a non-numeric issue id, which maps
+to `entity.id` 0, or an empty `actor.id`) is skipped with a warning rather
+than dispatched, because `fullsend run` cannot use an invalid embedded event.
+A skipped event is never dispatched. The issue's checkpoint advances past it
+as for any other inspected event; while a failed dispatch of another of the
+issue's events holds the checkpoint, the next cycle inspects it again and
+repeats the warning. A cycle that skipped events and runs to completion also
+logs how many of its events it skipped.
+
 ## State
 
 - `state.labels` — label names from `fields.labels` at event time.

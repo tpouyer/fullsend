@@ -1048,4 +1048,10 @@ suiteRunner := godog.TestSuite{
 
 **`ci.EmptyMatrixWaiter` optional interface:** `WaitForHarnessEmptyMatrix(ctx, owner, repo string, after time.Time) (*forge.WorkflowRun, error)` backs the `the harness dispatch completes with an empty matrix` step. It is a separate interface, not a `ci.Driver` method, so external `ci.Driver` implementations keep compiling; the step fails with an explanatory error on a driver without it. Only the GitHub Actions reference driver implements it.
 
+**`jiramock.State.SetIssueID` addition:** `SetIssueID(key, id string) bool` replaces the numeric ID of an issue added with `AddIssue`, so a scenario can serve an issue whose ID fullsend cannot map; it reports whether the issue exists. The `Jira issue "<key>" has id "<id>"` step uses it. A non-breaking addition.
+
+**Jira poll CLI steps and `world.World.JiraPollCLI*` additions:** `fullsend poll runs the Jira poller with target repo "<repo>"` runs the suite's `fullsend` binary (`world.World.CLIBinary`) as `fullsend poll --input-driver jira-poll` against the mock Jira server, with placeholder Jira credentials, and records the run in the new `JiraPollCLIOutput`, `JiraPollCLIExitCode` and `JiraPollCLIOutputPath` fields; `fullsend poll fails with "<text>" and writes no dispatch output` checks it. A non-breaking addition.
+
+**`jiramock` labels change:** an issue added with `AddIssue(key, nil)` is now served with `"labels": []`, as Jira serves an issue without labels, instead of `"labels": null`. A test that relied on a null labels field sees an empty list.
+
 Bump the pinned version when behaviour step vocabulary or `pkg/behaviourtest` APIs change.

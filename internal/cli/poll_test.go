@@ -198,6 +198,15 @@ func TestValidateJiraPollArgs(t *testing.T) {
 			wantErrContain: "owner/repo",
 		},
 		{
+			name:           "target-repo containing .. is rejected",
+			envVars:        map[string]string{},
+			jiraURL:        "https://acme.atlassian.net",
+			targetRepo:     "acme/..",
+			jiraProject:    "PROJ",
+			outputPath:     "/tmp/dispatches.json",
+			wantErrContain: "must not contain '..'",
+		},
+		{
 			name:        "valid minimal config",
 			envVars:     map[string]string{},
 			jiraURL:     "https://acme.atlassian.net",

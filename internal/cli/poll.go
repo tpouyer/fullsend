@@ -357,6 +357,11 @@ func validateJiraPollArgs(jiraURL, jiraProject, jqlOverride, targetRepo, outputP
 	if !validTargetRepo.MatchString(targetRepo) {
 		return jiraPollArgs{}, fmt.Errorf("--target-repo %q must be an owner/repo slug", targetRepo)
 	}
+	// The repo becomes every event's normalized repo, which may not contain
+	// "..": the poller would skip every event and advance every checkpoint.
+	if strings.Contains(targetRepo, "..") {
+		return jiraPollArgs{}, fmt.Errorf("--target-repo %q must not contain '..'", targetRepo)
+	}
 
 	if jiraProject == "" && jqlOverride == "" {
 		return jiraPollArgs{}, fmt.Errorf("--jira-project or --jql is required")

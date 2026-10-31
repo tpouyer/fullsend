@@ -3,10 +3,13 @@ package steps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cucumber/godog"
 
@@ -106,6 +109,9 @@ func registerJiraPollSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^a Jira issue "([^"]+)" with labels "([^"]*)"$`, func(ctx context.Context, key, labels string) (context.Context, error) {
 		return ctx, givenJiraIssue(world.FromContext(ctx), key, labels)
 	})
+	sc.Step(`^Jira issue "([^"]+)" has id "([^"]*)"$`, func(ctx context.Context, key, id string) (context.Context, error) {
+		return ctx, givenJiraIssueID(world.FromContext(ctx), key, id)
+	})
 	sc.Step(`^a comment "([^"]*)" is added to Jira issue "([^"]+)"$`, func(ctx context.Context, body, key string) (context.Context, error) {
 		return ctx, whenJiraComment(world.FromContext(ctx), key, body)
 	})
@@ -114,6 +120,12 @@ func registerJiraPollSteps(sc *godog.ScenarioContext) {
 	})
 	sc.Step(`^the Jira poller runs$`, func(ctx context.Context) (context.Context, error) {
 		return ctx, whenJiraPollerRuns(ctx, world.FromContext(ctx))
+	})
+	sc.Step(`^fullsend poll runs the Jira poller with target repo "([^"]*)"$`, func(ctx context.Context, repo string) (context.Context, error) {
+		return ctx, whenJiraPollCLIRuns(ctx, world.FromContext(ctx), repo)
+	})
+	sc.Step(`^fullsend poll fails with "([^"]*)" and writes no dispatch output$`, func(ctx context.Context, text string) (context.Context, error) {
+		return ctx, thenJiraPollCLIFails(world.FromContext(ctx), text)
 	})
 	sc.Step(`^the dispatch output contains a "([^"]+)" stage for issue "([^"]+)"$`, func(ctx context.Context, stage, key string) (context.Context, error) {
 		return ctx, thenDispatchContains(world.FromContext(ctx), stage, key)
@@ -172,6 +184,16 @@ func givenJiraIssue(w *world.World, key, labels string) error {
 	return nil
 }
 
+func givenJiraIssueID(w *world.World, key, id string) error {
+	if w.JiraMockState == nil {
+		return fmt.Errorf("mock Jira server not initialized")
+	}
+	if !w.JiraMockState.SetIssueID(key, id) {
+		return fmt.Errorf("issue %q not found in the mock Jira server", key)
+	}
+	return nil
+}
+
 func whenJiraComment(w *world.World, key, body string) error {
 	if w.JiraMockState == nil {
 		return fmt.Errorf("mock Jira server not initialized")
@@ -212,6 +234,64 @@ func whenJiraPollerRuns(ctx context.Context, w *world.World) error {
 	poller := jirapoll.New(jiraClient, matcher, opts)
 	if err := poller.Run(ctx); err != nil {
 		return fmt.Errorf("poller run: %w", err)
+	}
+	return nil
+}
+
+// jiraPollCLITimeout bounds one `fullsend poll` run against the mock.
+const jiraPollCLITimeout = 2 * time.Minute
+
+// whenJiraPollCLIRuns runs the suite's fullsend CLI as
+// `fullsend poll --input-driver jira-poll` against the mock Jira server, with
+// the given target repo and placeholder Jira credentials, so that without an
+// argument check the run would poll the mock and write dispatch records. A
+// run that exits non-zero is recorded, not returned.
+func whenJiraPollCLIRuns(ctx context.Context, w *world.World, repo string) error {
+	if w.JiraMockServer == nil {
+		return fmt.Errorf("mock Jira server not initialized")
+	}
+	if w.CLIBinary == "" {
+		return fmt.Errorf("no fullsend CLI binary configured for the suite")
+	}
+	w.JiraPollCLIOutputPath = filepath.Join(w.JiraConfigDir, "cli-dispatches.json")
+	runCtx, cancel := context.WithTimeout(ctx, jiraPollCLITimeout)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, w.CLIBinary, "poll", "--input-driver", "jira-poll",
+		"--jira-url", w.JiraMockServer.URL, "--jira-project", "PROJ",
+		"--target-repo", repo, "--output", w.JiraPollCLIOutputPath,
+		"--fullsend-dir", filepath.Join(w.JiraConfigDir, ".fullsend"))
+	cmd.Dir = w.JiraConfigDir
+	cmd.Env = append(os.Environ(), "JIRA_TOKEN=test-token", "JIRA_USER_EMAIL=poller@example.com")
+	cmd.WaitDelay = 10 * time.Second
+	out, err := cmd.CombinedOutput()
+	w.JiraPollCLIOutput = string(out)
+	w.JiraPollCLIExitCode = 0
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return fmt.Errorf("running fullsend poll: %w", err)
+		}
+		w.JiraPollCLIExitCode = exitErr.ExitCode()
+	}
+	return nil
+}
+
+// thenJiraPollCLIFails checks the recorded `fullsend poll` run exited
+// non-zero, printed text, and wrote no dispatch output.
+func thenJiraPollCLIFails(w *world.World, text string) error {
+	if w.JiraPollCLIOutputPath == "" {
+		return fmt.Errorf("fullsend poll has not run; use 'When fullsend poll runs the Jira poller with target repo'")
+	}
+	if w.JiraPollCLIExitCode == 0 {
+		return fmt.Errorf("fullsend poll succeeded, want it to fail with %q; output:\n%s", text, w.JiraPollCLIOutput)
+	}
+	if !strings.Contains(w.JiraPollCLIOutput, text) {
+		return fmt.Errorf("fullsend poll failed (exit %d) without %q; output:\n%s", w.JiraPollCLIExitCode, text, w.JiraPollCLIOutput)
+	}
+	if _, err := os.Stat(w.JiraPollCLIOutputPath); err == nil {
+		return fmt.Errorf("fullsend poll wrote dispatch output to %s", w.JiraPollCLIOutputPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking dispatch output: %w", err)
 	}
 	return nil
 }
